@@ -3,6 +3,10 @@ using AssetRipper.Assets.Bundles;
 using AssetRipper.Import.Configuration;
 using AssetRipper.Import.Logging;
 using AssetRipper.SourceGenerated;
+using AssetRipper.Assets.Collections;
+using AssetRipper.Export.UnityProjects.Shaders;
+using AssetRipper.SourceGenerated.Classes.ClassID_48;
+using System.Text.Json;
 
 namespace AssetRipper.Export.UnityProjects;
 
@@ -82,6 +86,7 @@ public sealed partial class ProjectExporter
 		ProjectAssetContainer container = new ProjectAssetContainer(this, options, fileCollection.FetchAssets(), collections);
 		int exportableCount = collections.Count(c => c.Exportable);
 		int currentExportable = 0;
+		HashSet<IExportCollection> successful = new();
 
 		for (int i = 0; i < collections.Count; i++)
 		{
@@ -92,6 +97,7 @@ public sealed partial class ProjectExporter
 				currentExportable++;
 				Logger.Info(LogCategory.ExportProgress, $"({currentExportable}/{exportableCount}) Exporting '{collection.Name}'");
 				bool exportedSuccessfully = collection.Export(container, options.ProjectRootPath, fileSystem);
+				if (exportedSuccessfully) successful.Add(collection);
 				if (!exportedSuccessfully)
 				{
 					Logger.Warning(LogCategory.ExportProgress, $"Failed to export '{collection.Name}' ({collection.GetType().Name})");
@@ -99,7 +105,86 @@ public sealed partial class ProjectExporter
 			}
 			EventExportProgressUpdated?.Invoke(i, collections.Count);
 		}
+		// Record the actual pointers chosen by the exporter, including subassets and scenes.
+		// Names and source path IDs alone cannot identify an exported Unity object.
+		using (Stream stream = fileSystem.File.Create(fileSystem.Path.Join(options.ProjectRootPath, "recovery-object-map.json")))
+		using (Utf8JsonWriter writer = new(stream))
+		{
+			writer.WriteStartObject(); writer.WriteNumber("schema_version", 1); writer.WriteStartArray("objects");
+			foreach (IExportCollection collection in collections)
+			{
+				container.CurrentCollection = collection;
+				foreach (IUnityObjectBase asset in collection.Assets)
+				{
+					if (asset.Collection is not SerializedAssetCollection) continue;
+					writer.WriteStartObject();
+					writer.WriteString("serialized_file", asset.Collection.Name);
+					writer.WriteNumber("path_id", asset.PathID);
+					writer.WriteString("type", asset.ClassName);
+					writer.WriteBoolean("exported", successful.Contains(collection));
+					try
+					{
+						MetaPtr pointer = collection.CreateExportPointer(container, asset, false);
+						writer.WriteString("guid", pointer.GUID.ToString());
+						writer.WriteNumber("file_id", pointer.FileID);
+						writer.WriteNumber("asset_type", (int)pointer.AssetType);
+					}
+					catch (Exception exception) { writer.WriteString("error", exception.Message); }
+					writer.WriteEndObject();
+				}
+			}
+			writer.WriteEndArray(); writer.WriteEndObject();
+		}
+		ExportRecoveryCompiledShaders(container, collections, options.ProjectRootPath, fileSystem);
 		EventExportFinished?.Invoke();
+	}
+
+	// The bundle's compiled shaders as YAML shader assets, beside the project rather than
+	// under Assets/, so the normal export is unchanged and recovery decides what to install.
+	// Compiled shader data only loads in the Unity version line that built it, so shaders
+	// from another line are only recorded.
+	private static void ExportRecoveryCompiledShaders(ProjectAssetContainer container, List<IExportCollection> collections, string projectRoot, FileSystem fileSystem)
+	{
+		string root = fileSystem.Path.Join(projectRoot, "RecoveryCompiledShaders");
+		fileSystem.Directory.Create(root);
+		YamlShaderExporter exporter = new();
+		using Stream stream = fileSystem.File.Create(fileSystem.Path.Join(root, "index.json"));
+		using Utf8JsonWriter writer = new(stream, new JsonWriterOptions { Indented = true });
+		writer.WriteStartObject();
+		writer.WriteNumber("schema_version", 1);
+		writer.WriteStartArray("shaders");
+		foreach (IExportCollection collection in collections)
+		{
+			foreach (IUnityObjectBase asset in collection.Assets)
+			{
+				if (asset is not IShader shader || asset.Collection is not SerializedAssetCollection) continue;
+				container.CurrentCollection = collection;
+				var version = asset.Collection.Version;
+				writer.WriteStartObject();
+				writer.WriteString("file", asset.Collection.Name);
+				writer.WriteNumber("path_id", asset.PathID);
+				writer.WriteString("name", shader.Has_ParsedForm() ? shader.ParsedForm.Name.String : collection.Name);
+				writer.WriteString("unity_version", version.ToString());
+				try { writer.WriteString("stub_guid", collection.CreateExportPointer(container, asset, false).GUID.ToString()); }
+				catch (Exception exception) { writer.WriteString("stub_error", exception.Message); }
+				if (version.Major != 2022 || version.Minor != 3)
+				{
+					writer.WriteString("skipped", $"built with Unity {version}; compiled shader data loads only in the 2022.3 line");
+				}
+				else
+				{
+					string fileName = $"{FileSystem.FixInvalidPathCharacters(asset.Collection.Name)}_{asset.PathID}.asset";
+					try
+					{
+						exporter.Export(container, asset, fileSystem.Path.Join(root, fileName), fileSystem);
+						writer.WriteString("asset", fileName);
+					}
+					catch (Exception exception) { writer.WriteString("error", exception.Message); }
+				}
+				writer.WriteEndObject();
+			}
+		}
+		writer.WriteEndArray(); writer.WriteEndObject();
 	}
 
 	private List<IExportCollection> CreateCollections(GameBundle fileCollection)
