@@ -72,8 +72,9 @@ public partial class FileSystem
 		name ??= Path.GetFileNameWithoutExtension(validFileName);
 		if (!IsReservedName(name))
 		{
-			if (!File.Exists(Path.Join(dirPath, validFileName)))
+			if (!IsNameTaken(dirPath, validFileName))
 			{
+				MarkNameAsTaken(dirPath, validFileName);
 				return validFileName;
 			}
 		}
@@ -86,9 +87,10 @@ public partial class FileSystem
 		for (int counter = initial; counter < int.MaxValue; counter++)
 		{
 			string proposedName = $"{name}_{counter}{ext}";
-			if (!File.Exists(Path.Join(dirPath, proposedName)))
+			if (!IsNameTaken(dirPath, proposedName))
 			{
 				UniqueNamesByInitialPath[key] = counter;
+				MarkNameAsTaken(dirPath, proposedName);
 				return proposedName;
 			}
 		}
@@ -96,6 +98,34 @@ public partial class FileSystem
 	}
 
 	private Dictionary<string, int> UniqueNamesByInitialPath { get; } = [];
+
+	/// <summary>
+	/// Entry names present in each directory plus every name this instance handed out for it,
+	/// compared ignoring case so a name counts as taken on every platform, as on Windows.
+	/// Deletions are not tracked, which at worst costs an unnecessary suffix.
+	/// </summary>
+	private Dictionary<string, HashSet<string>> TakenEntryNamesByDirectory { get; } = [];
+
+	private bool IsNameTaken(string dirPath, string fileName)
+	{
+		if (!TakenEntryNamesByDirectory.TryGetValue(dirPath, out HashSet<string>? takenNames))
+		{
+			IEnumerable<string> entryNames = Directory.EnumerateFiles(dirPath)
+				.Concat(Directory.EnumerateDirectories(dirPath))
+				.Select(p => System.IO.Path.GetFileName(p)!);
+			takenNames = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
+			TakenEntryNamesByDirectory.Add(dirPath, takenNames);
+		}
+		return takenNames.Contains(fileName);
+	}
+
+	private void MarkNameAsTaken(string dirPath, string fileName)
+	{
+		if (TakenEntryNamesByDirectory.TryGetValue(dirPath, out HashSet<string>? takenNames))
+		{
+			takenNames.Add(fileName);
+		}
+	}
 
 	public static string RemoveCloneSuffixes(string path)
 	{

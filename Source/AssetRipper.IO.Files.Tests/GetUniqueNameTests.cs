@@ -40,4 +40,32 @@ public static class GetUniqueNameTests
 			Assert.That(new VirtualFileSystem().GetUniqueName("/dir", "A文", 4), Is.EqualTo("A文"));
 		}
 	}
+
+	[Test]
+	public static void CaseVariantExistingEntryGetsWindowsSuffix()
+	{
+		string directory = Path.Combine(Path.GetTempPath(), "GetUniqueNameTests", Path.GetRandomFileName());
+		Directory.CreateDirectory(directory);
+		try
+		{
+			LocalFileSystem fileSystem = LocalFileSystem.Instance;
+			File.Create(Path.Combine(directory, "Tablet.asset")).Dispose();
+
+			Assert.That(fileSystem.GetUniqueName(directory, "tablet.asset", FileSystem.MaxFileNameLength), Is.EqualTo("tablet_0.asset"));
+
+			File.Create(Path.Combine(directory, "Tablet_0.asset")).Dispose();
+
+			using (Assert.EnterMultipleScope())
+			{
+				// Same instance: the handed-out tablet_0 counts as taken even though it was never written.
+				Assert.That(fileSystem.GetUniqueName(directory, "tablet.asset", FileSystem.MaxFileNameLength), Is.EqualTo("tablet_1.asset"));
+				// Fresh instance: only the entries on disk count.
+				Assert.That(new LocalFileSystem().GetUniqueName(directory, "tablet.asset", FileSystem.MaxFileNameLength), Is.EqualTo("tablet_1.asset"));
+			}
+		}
+		finally
+		{
+			Directory.Delete(directory, recursive: true);
+		}
+	}
 }
