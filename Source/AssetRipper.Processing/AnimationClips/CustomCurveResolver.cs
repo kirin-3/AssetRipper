@@ -43,7 +43,7 @@ public partial class CustomCurveResolver
 					const string Prefix = "blendShape.";
 					if (UnknownPathRegex.IsMatch(path))
 					{
-						return Prefix + path;
+						return UnknownName(Prefix, attribute);
 					}
 
 					foreach (IGameObject root in Roots)
@@ -72,7 +72,7 @@ public partial class CustomCurveResolver
 
 						return Prefix + shapeName;
 					}
-					return Prefix + Crc32Algorithm.ReverseAscii(attribute, $"path_0x{attribute:X}_");
+					return UnknownName(Prefix, attribute);
 				}
 
 			case BindingCustomType.Renderer:
@@ -86,7 +86,7 @@ public partial class CustomCurveResolver
 					const string Prefix = "material.";
 					if (UnknownPathRegex.IsMatch(path))
 					{
-						return Prefix + path;
+						return UnknownName(Prefix, attribute);
 					}
 
 					foreach (IGameObject root in Roots)
@@ -126,7 +126,7 @@ public partial class CustomCurveResolver
 						};
 						return Prefix + property + "." + subProperty;
 					}
-					return Prefix + Crc32Algorithm.ReverseAscii(attribute, $"path_0x{attribute:X}_");
+					return UnknownName(Prefix, attribute);
 				}
 
 			case BindingCustomType.SpriteRenderer:
@@ -228,8 +228,8 @@ public partial class CustomCurveResolver
 						8 => "m_AffectTranslationY",
 						9 => "m_AffectTranslationZ",
 						10 => "m_Active",
-						11 => $"m_Sources.Array.data[{attribute >> 8}].sourceTransform",
-						12 => $"m_Sources.Array.data[{attribute >> 8}].weight",
+						11 => $"m_Sources.Array.data[{ConstraintIndex(attribute)}].sourceTransform",
+						12 => $"m_Sources.Array.data[{ConstraintIndex(attribute)}].weight",
 						_ => ThrowUnknownAttributeException(type, attribute)
 					};
 				}
@@ -250,8 +250,8 @@ public partial class CustomCurveResolver
 						8 => "m_AffectRotationY",
 						9 => "m_AffectRotationZ",
 						10 => "m_Active",
-						11 => $"m_Sources.Array.data[{attribute >> 8}].sourceTransform",
-						12 => $"m_Sources.Array.data[{attribute >> 8}].weight",
+						11 => $"m_Sources.Array.data[{ConstraintIndex(attribute)}].sourceTransform",
+						12 => $"m_Sources.Array.data[{ConstraintIndex(attribute)}].weight",
 						_ => ThrowUnknownAttributeException(type, attribute)
 					};
 				}
@@ -272,8 +272,8 @@ public partial class CustomCurveResolver
 						8 => "m_AffectScalingY",
 						9 => "m_AffectScalingZ",
 						10 => "m_Active",
-						11 => $"m_Sources.Array.data[{attribute >> 8}].sourceTransform",
-						12 => $"m_Sources.Array.data[{attribute >> 8}].weight",
+						11 => $"m_Sources.Array.data[{ConstraintIndex(attribute)}].sourceTransform",
+						12 => $"m_Sources.Array.data[{ConstraintIndex(attribute)}].weight",
 						_ => ThrowUnknownAttributeException(type, attribute)
 					};
 				}
@@ -289,8 +289,8 @@ public partial class CustomCurveResolver
 						3 => "m_AffectRotationZ",
 						4 => "m_Active",
 						5 => "m_WorldUpObject",
-						6 => $"m_Sources.Array.data[{attribute >> 8}].sourceTransform",
-						7 => $"m_Sources.Array.data[{attribute >> 8}].weight",
+						6 => $"m_Sources.Array.data[{ConstraintIndex(attribute)}].sourceTransform",
+						7 => $"m_Sources.Array.data[{ConstraintIndex(attribute)}].weight",
 						_ => ThrowUnknownAttributeException(type, attribute)
 					};
 				}
@@ -308,14 +308,14 @@ public partial class CustomCurveResolver
 						5 => "m_AffectRotationY",
 						6 => "m_AffectRotationZ",
 						7 => "m_Active",
-						8 => $"m_TranslationOffsets.Array.data[{attribute >> 8}].x",
-						9 => $"m_TranslationOffsets.Array.data[{attribute >> 8}].y",
-						10 => $"m_TranslationOffsets.Array.data[{attribute >> 8}].z",
-						11 => $"m_RotationOffsets.Array.data[{attribute >> 8}].x",
-						12 => $"m_RotationOffsets.Array.data[{attribute >> 8}].y",
-						13 => $"m_RotationOffsets.Array.data[{attribute >> 8}].z",
-						14 => $"m_Sources.Array.data[{attribute >> 8}].sourceTransform",
-						15 => $"m_Sources.Array.data[{attribute >> 8}].weight",
+						8 => $"m_TranslationOffsets.Array.data[{ConstraintIndex(attribute)}].x",
+						9 => $"m_TranslationOffsets.Array.data[{ConstraintIndex(attribute)}].y",
+						10 => $"m_TranslationOffsets.Array.data[{ConstraintIndex(attribute)}].z",
+						11 => $"m_RotationOffsets.Array.data[{ConstraintIndex(attribute)}].x",
+						12 => $"m_RotationOffsets.Array.data[{ConstraintIndex(attribute)}].y",
+						13 => $"m_RotationOffsets.Array.data[{ConstraintIndex(attribute)}].z",
+						14 => $"m_Sources.Array.data[{ConstraintIndex(attribute)}].sourceTransform",
+						15 => $"m_Sources.Array.data[{ConstraintIndex(attribute)}].weight",
 						_ => ThrowUnknownAttributeException(type, attribute)
 					};
 				}
@@ -328,8 +328,8 @@ public partial class CustomCurveResolver
 						0 => "m_Weight",
 						1 => "m_Active",
 						2 => "m_WorldUpObject",
-						3 => $"m_Sources.Array.data[{attribute >> 8}].sourceTransform",
-						4 => $"m_Sources.Array.data[{attribute >> 8}].weight",
+						3 => $"m_Sources.Array.data[{ConstraintIndex(attribute)}].sourceTransform",
+						4 => $"m_Sources.Array.data[{ConstraintIndex(attribute)}].weight",
 						5 => "m_Roll",
 						_ => ThrowUnknownAttributeException(type, attribute)
 					};
@@ -411,6 +411,12 @@ public partial class CustomCurveResolver
 			throw new ArgumentException($"Unknown attribute 0x{attribute:X} ({attribute}) for {type}");
 		}
 	}
+
+	// The low four bits select the field; the remaining bits select the array entry.
+	internal static uint ConstraintIndex(uint attribute) => attribute >> 4;
+
+	internal static string UnknownName(string prefix, uint attribute) =>
+		prefix + Crc32Algorithm.ReverseAscii(attribute, $"path_0x{attribute:X}_");
 
 	[field: MaybeNull]
 	private IGameObject[] Roots
